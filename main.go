@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -17,40 +17,25 @@ import (
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 
-	"github.com/google/go-github/v45/github"
 	"github.com/maxmind/mmdbwriter"
 	"github.com/maxmind/mmdbwriter/inserter"
 	"github.com/maxmind/mmdbwriter/mmdbtype"
-	"github.com/oschwald/geoip2-golang"
 	"github.com/oschwald/maxminddb-golang"
 )
 
-var githubClient *github.Client
+var token string
 
 func init() {
-	accessToken, loaded := os.LookupEnv("ACCESS_TOKEN")
+	ipinfoToken, loaded := os.LookupEnv("IPINFO_TOKEN")
 	if !loaded {
-		githubClient = github.NewClient(nil)
-		return
+		panic("no IPINFO_TOKEN")
 	}
-	transport := &github.BasicAuthTransport{
-		Username: accessToken,
-	}
-	githubClient = github.NewClient(transport.Client())
+	token = ipinfoToken
 }
 
-func fetch(from string) (*github.RepositoryRelease, error) {
-	names := strings.SplitN(from, "/", 2)
-	latestRelease, _, err := githubClient.Repositories.GetLatestRelease(context.Background(), names[0], names[1])
-	if err != nil {
-		return nil, err
-	}
-	return latestRelease, err
-}
-
-func get(downloadURL *string) ([]byte, error) {
-	log.Info("download ", *downloadURL)
-	response, err := http.Get(*downloadURL)
+func get(downloadURL string) ([]byte, error) {
+	log.Info("download ", downloadURL)
+	response, err := http.Get(downloadURL)
 	if err != nil {
 		return nil, err
 	}
@@ -58,14 +43,16 @@ func get(downloadURL *string) ([]byte, error) {
 	return io.ReadAll(response.Body)
 }
 
-func download(release *github.RepositoryRelease) ([]byte, error) {
-	geoipAsset := common.Find(release.Assets, func(it *github.ReleaseAsset) bool {
-		return *it.Name == "Country.mmdb"
-	})
-	if geoipAsset == nil {
-		return nil, E.New("Country.mmdb not found in upstream release ", release.Name)
-	}
-	return get(geoipAsset.BrowserDownloadURL)
+func download() ([]byte, error) {
+	url := fmt.Sprintf("https://ipinfo.io/data/free/country.mmdb?token=%s", token)
+	return get(url)
+}
+
+type IpinfoContry struct {
+	Continent         string            `maxminddb:"continent"`
+	ContinentName     string            `maxminddb:"continent_name"`
+	Country           string            `maxminddb:"country"`
+	CountryName       string            `maxminddb:"country_name"`
 }
 
 func parse(binary []byte) (metadata maxminddb.Metadata, countryMap map[string][]*net.IPNet, err error) {
@@ -76,7 +63,7 @@ func parse(binary []byte) (metadata maxminddb.Metadata, countryMap map[string][]
 	metadata = database.Metadata
 	networks := database.Networks(maxminddb.SkipAliasedNetworks)
 	countryMap = make(map[string][]*net.IPNet)
-	var country geoip2.Enterprise
+	var country IpinfoContry
 	var ipNet *net.IPNet
 	for networks.Next() {
 		ipNet, err = networks.Network(&country)
@@ -84,14 +71,10 @@ func parse(binary []byte) (metadata maxminddb.Metadata, countryMap map[string][]
 			return
 		}
 		var code string
-		if country.Country.IsoCode != "" {
-			code = strings.ToLower(country.Country.IsoCode)
-		} else if country.RegisteredCountry.IsoCode != "" {
-			code = strings.ToLower(country.RegisteredCountry.IsoCode)
-		} else if country.RepresentedCountry.IsoCode != "" {
-			code = strings.ToLower(country.RepresentedCountry.IsoCode)
-		} else if country.Continent.Code != "" {
-			code = strings.ToLower(country.Continent.Code)
+		if country.Country != "" {
+			code = strings.ToLower(country.Country)
+		} else if country.Continent != "" {
+			code = strings.ToLower(country.Continent)
 		} else {
 			continue
 		}
@@ -163,22 +146,8 @@ func write(writer *mmdbwriter.Tree, dataMap map[string][]*net.IPNet, output stri
 	return err
 }
 
-func release(source string, destination string, output string, ruleSetOutput string) error {
-	sourceRelease, err := fetch(source)
-	if err != nil {
-		return err
-	}
-	destinationRelease, err := fetch(destination)
-	if err != nil {
-		log.Warn("missing destination latest release")
-	} else {
-		if os.Getenv("NO_SKIP") != "true" && strings.Contains(*destinationRelease.Name, *sourceRelease.Name) {
-			log.Info("already latest")
-			setActionOutput("skip", "true")
-			return nil
-		}
-	}
-	binary, err := download(sourceRelease)
+func release(output string, ruleSetOutput string) error {
+	binary, err := download()
 	if err != nil {
 		return err
 	}
@@ -241,7 +210,7 @@ func release(source string, destination string, output string, ruleSetOutput str
 		outputRuleSet.Close()
 	}
 
-	setActionOutput("tag", *sourceRelease.Name)
+	setActionOutput("tag", "ipinfo")
 	return nil
 }
 
@@ -250,7 +219,7 @@ func setActionOutput(name string, content string) {
 }
 
 func main() {
-	err := release("Dreamacro/maxmind-geoip", "sagernet/sing-geoip", "geoip.db", "rule-set")
+	err := release("geoip.db", "rule-set")
 	if err != nil {
 		log.Fatal(err)
 	}

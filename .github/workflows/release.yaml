@@ -2,7 +2,7 @@ name: Release
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 8 12 * *"
+    - cron: "0 8 */3 * *"
 jobs:
   build:
     name: Build
@@ -22,6 +22,8 @@ jobs:
           go-version: ${{ steps.version.outputs.go_version }}
       - name: Build geoip
         id: build
+        env:
+          IPINFO_TOKEN: ${{ secrets.IPINFO_TOKEN }}
         run: go run -v .
       - name: Release rule sets
         if: steps.build.outputs.skip != 'true'
