@@ -169,13 +169,15 @@ func release(output string, ruleSetOutput string) error {
 		return err
 	}
 
-	writer, err = newWriter(metadata, []string{"cn"})
-	if err != nil {
-		return err
-	}
-	err = write(writer, countryMap, "geoip-cn.db", []string{"cn"})
-	if err != nil {
-		return err
+	for _, country := range []string{"cn", "ir", "jp"} {
+		writer, err = newWriter(metadata, []string{country})
+		if err != nil {
+			return err
+		}
+		err = write(writer, countryMap, "geoip-"+ country +".db", []string{country})
+		if err != nil {
+			return err
+		}
 	}
 
 	os.RemoveAll(ruleSetOutput)

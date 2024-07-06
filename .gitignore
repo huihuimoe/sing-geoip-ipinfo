@@ -1,6 +1,7 @@
 /.idea/
 /vendor/
-/*.db
+*.db
 *.mmdb
+*.sha256sum
 /rule-set/
 /release/

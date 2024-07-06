@@ -31,6 +31,8 @@ jobs:
         run: |
           sha256sum geoip.db > geoip.db.sha256sum
           sha256sum geoip-cn.db > geoip-cn.db.sha256sum
+          sha256sum geoip-ir.db > geoip-ir.db.sha256sum
+          sha256sum geoip-jp.db > geoip-jp.db.sha256sum
       - name: Release release branch
         if: steps.build.outputs.skip != 'true'
         run: .github/release-branch.sh
@@ -51,3 +53,7 @@ jobs:
             geoip.db.sha256sum
             geoip-cn.db
             geoip-cn.db.sha256sum
+            geoip-ir.db
+            geoip-ir.db.sha256sum
+            geoip-jp.db
+            geoip-jp.db.sha256sum
